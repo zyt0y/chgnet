@@ -196,6 +196,7 @@ class Trainer:
         self.training_history: dict[
             str, dict[Literal["train", "val", "test"], list[float]]
         ] = {key: {"train": [], "val": [], "test": []} for key in self.targets}
+        self.training_history["loss"] = {"train": [], "val": [], "test": []}
         self.best_model = None
 
     def train(
@@ -242,22 +243,24 @@ class Trainer:
 
         for epoch in range(self.starting_epoch, self.epochs):
             # train
-            train_mae = self._train(train_loader, epoch)
+            train_mae, train_loss = self._train(train_loader, epoch)
             if "e" in train_mae and train_mae["e"] != train_mae["e"]:
                 print("Exit due to NaN")
                 break
 
             # val
-            val_mae = self._validate(val_loader)
+            val_mae, val_loss = self._validate(val_loader)
             for key in self.targets:
                 self.training_history[key]["train"].append(train_mae[key])
                 self.training_history[key]["val"].append(val_mae[key])
+            self.training_history["loss"]["train"].append(train_loss)
+            self.training_history["loss"]["val"].append(val_loss)
 
             if "e" in val_mae and val_mae["e"] != val_mae["e"]:
                 print("Exit due to NaN")
                 break
 
-            self.save_checkpoint(epoch, val_mae, save_dir=save_dir)
+            self.save_checkpoint(epoch, val_mae, val_loss, save_dir=save_dir)
 
         if test_loader is not None:
             # test best model
@@ -352,7 +355,7 @@ class Trainer:
                         f"{key} {mae_errors[key].val:.3f}({mae_errors[key].avg:.3f})  "
                     )
                 print(message)
-        return {key: round(err.avg, 6) for key, err in mae_errors.items()}
+        return {key: round(err.avg, 6) for key, err in mae_errors.items()}, round(losses.avg, 6)
 
     def _validate(
         self,
@@ -470,7 +473,7 @@ class Trainer:
         for key in self.targets:
             message += f"{key}_MAE ({mae_errors[key].avg:.3f}) \t"
         print(message)
-        return {k: round(mae_error.avg, 6) for k, mae_error in mae_errors.items()}
+        return {k: round(mae_error.avg, 6) for k, mae_error in mae_errors.items()}, round(losses.avg, 6)
 
     def get_best_model(self) -> CHGNet:
         """Get best model recorded in the trainer."""
@@ -500,7 +503,7 @@ class Trainer:
         torch.save(state, filename)
 
     def save_checkpoint(
-        self, epoch: int, mae_error: dict, save_dir: str | None = None
+        self, epoch: int, mae_error: dict, val_loss: float, save_dir: str | None = None
     ) -> None:
         """Function to save CHGNet trained weights after each epoch.
 
@@ -539,6 +542,14 @@ class Trainer:
             shutil.copyfile(
                 filename,
                 os.path.join(save_dir, f"bestF_epoch{epoch}_{err_str}.pth.tar"),
+            )
+        if val_loss == min(self.training_history["loss"]["val"]):
+            for fname in os.listdir(save_dir):
+                if fname.startswith("bestL"):
+                    os.remove(os.path.join(save_dir, fname))
+            shutil.copyfile(
+                filename,
+                os.path.join(save_dir, f"bestL_epoch{epoch}_{err_str}.pth.tar"),
             )
 
     @classmethod

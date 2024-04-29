@@ -45,6 +45,7 @@ class Trainer:
         starting_epoch: int = 0,
         learning_rate: float = 1e-3,
         print_freq: int = 100,
+        save_model_per_epoch: int = 50,
         torch_seed: int | None = None,
         data_seed: int | None = None,
         use_device: str | None = None,
@@ -77,6 +78,8 @@ class Trainer:
                 Default = 1e-3
             print_freq (int): frequency to print training output
                 Default = 100
+            save_model_per_epoch (int): frequency to save the model during the trainig
+                Default = 50
             torch_seed (int): random seed for torch
                 Default = None
             data_seed (int): random seed for random
@@ -189,6 +192,7 @@ class Trainer:
         )
 
         self.print_freq = print_freq
+        self.save_model_per_epoch = save_model_per_epoch
         self.training_history: dict[
             str, dict[Literal["train", "val", "test"], list[float]]
         ] = {key: {"train": [], "val": [], "test": []} for key in self.targets}
@@ -507,7 +511,9 @@ class Trainer:
         """
         for fname in os.listdir(save_dir):
             if fname.startswith("epoch"):
-                os.remove(os.path.join(save_dir, fname))
+                fname_epoch = int(fname.split('_')[0][5:]) + 1
+                if fname_epoch % self.save_model_per_epoch != 0:
+                    os.remove(os.path.join(save_dir, fname))
 
         err_str = "_".join(
             f"{key}{f'{mae_error[key] * 1000:.0f}' if key in mae_error else 'NA'}"
